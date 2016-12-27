@@ -68,7 +68,8 @@ import System.FilePath
 runGmPkgGhc :: (IOish m, Gm m) => LightGhc a -> m a
 runGmPkgGhc action = do
     pkgOpts <- packageGhcOptions
-    withLightHscEnv pkgOpts $ \env -> liftIO $ runLightGhc env action
+    distDir <- cradleDistDir <$> cradle
+    withLightHscEnv distDir pkgOpts $ \env -> liftIO $ runLightGhc env action
 
 initSession :: IOish m
             => [GHCOption]
@@ -82,10 +83,9 @@ initSession opts mdf = do
          putNewSession s
      Just (GmGhcSession hsc_env_ref) -> do
          crdl <- cradle
-
          df <- liftIO $ hsc_dflags <$> readIORef hsc_env_ref
          changed <-
-             withLightHscEnv' (initDF crdl) $ \hsc_env ->
+             withLightHscEnv' (cradleDistDir crdl) (initDF crdl) $ \hsc_env ->
                return $ not $ hsc_dflags hsc_env `eqDynFlags` df
 
          if changed
@@ -106,7 +106,7 @@ initSession opts mdf = do
    putNewSession :: IOish m => GhcModState -> GhcModT m ()
    putNewSession s = do
      crdl <- cradle
-     nhsc_env_ref <- liftIO . newIORef =<< newLightEnv (initDF crdl)
+     nhsc_env_ref <- liftIO . newIORef =<< newLightEnv (cradleDistDir crdl) (initDF crdl)
      runLightGhc' nhsc_env_ref $ setSessionDynFlags =<< getSessionDynFlags
      gmsPut s { gmGhcSession = Just $ GmGhcSession nhsc_env_ref }
 
@@ -326,7 +326,7 @@ resolveGmComponent :: (IOish m, Gm m)
 resolveGmComponent mums c@GmComponent {..} = do
   distDir <- cradleDistDir <$> cradle
   gmLog GmDebug "resolveGmComponent" $ text $ show $ ghcOpts distDir
-  withLightHscEnv (ghcOpts distDir) $ \env -> do
+  withLightHscEnv distDir (ghcOpts distDir) $ \env -> do
     let srcDirs = if null gmcSourceDirs then [""] else gmcSourceDirs
     let mg = gmcHomeModuleGraph
     let simp = gmcEntrypoints
@@ -352,7 +352,7 @@ resolveEntrypoint :: (IOish m, Gm m)
     -> m (GmComponent 'GMCRaw (Set ModulePath))
 resolveEntrypoint Cradle {..} c@GmComponent {..} = do
     gmLog GmDebug "resolveEntrypoint" $ text $ show $ gmcGhcSrcOpts
-    withLightHscEnv gmcGhcSrcOpts $ \env -> do
+    withLightHscEnv cradleDistDir gmcGhcSrcOpts $ \env -> do
       let srcDirs = if null gmcSourceDirs then [""] else gmcSourceDirs
       eps <- liftIO $ resolveChEntrypoints cradleRootDir gmcEntrypoints
       rms <- resolveModule env srcDirs `mapM` eps
@@ -445,8 +445,9 @@ resolveGmComponents mcache cs = do
 -- | Set the files as targets and load them.
 loadTargets :: IOish m => [GHCOption] -> [FilePath] -> GmlT m ()
 loadTargets opts targetStrs = do
+    crdl <- cradle
     targets' <-
-        withLightHscEnv opts $ \env ->
+        withLightHscEnv (cradleDistDir crdl) opts $ \env ->
                 liftM (nubBy ((==) `on` targetId))
                   (mapM ((`guessTarget` Nothing) >=> mapFile env) targetStrs)
               >>= mapM relativize

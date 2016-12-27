@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 module Language.Haskell.GhcMod.LightGhc where
 
 import Control.Monad
@@ -6,6 +8,11 @@ import Data.IORef
 
 import GHC
 import GHC.Paths (libdir)
+#ifdef WITH_GHCJS
+import Data.Char (isSpace)
+import GHCJS
+import System.Process (readProcess)
+#endif
 import StaticFlags
 import SysTools
 import DynFlags
@@ -15,15 +22,20 @@ import HscTypes
 import Language.Haskell.GhcMod.Types
 import Language.Haskell.GhcMod.Monad.Types
 import Language.Haskell.GhcMod.DynFlags
+import Language.Haskell.GhcMod.PathsAndFiles
 import qualified Language.Haskell.GhcMod.Gap as Gap
 
 -- We have to be more careful about tearing down 'HscEnv's since GHC 8 added an
 -- out of process GHCI server which has to be shutdown.
-newLightEnv :: IOish m => (DynFlags -> LightGhc DynFlags) -> m HscEnv
-newLightEnv mdf = do
+newLightEnv :: IOish m => FilePath -> (DynFlags -> LightGhc DynFlags) -> m HscEnv
+newLightEnv distDir mdf = do
   df <- liftIO $ do
      initStaticOpts
+#ifndef WITH_GHCJS
      settings <- initSysTools (Just libdir)
+#else
+     settings <- initSysTools =<< getLibDir distDir
+#endif
      initDynFlags $ defaultDynFlags settings
 
   hsc_env <- liftIO $ newHscEnv df
@@ -38,11 +50,11 @@ teardownLightEnv env = runLightGhc env $ do
   Gap.withCleanupSession $ return ()
 
 withLightHscEnv'
-    :: IOish m => (DynFlags -> LightGhc DynFlags) -> (HscEnv -> m a) -> m a
-withLightHscEnv' mdf action = gbracket (newLightEnv mdf) teardownLightEnv action
+    :: IOish m => FilePath -> (DynFlags -> LightGhc DynFlags) -> (HscEnv -> m a) -> m a
+withLightHscEnv' distDir mdf action = gbracket (newLightEnv distDir mdf) teardownLightEnv action
 
-withLightHscEnv :: IOish m => [GHCOption] -> (HscEnv -> m a) -> m a
-withLightHscEnv opts = withLightHscEnv' (f <=< liftIO . newHscEnv)
+withLightHscEnv :: IOish m => FilePath -> [GHCOption] -> (HscEnv -> m a) -> m a
+withLightHscEnv distDir opts = withLightHscEnv' distDir (f <=< liftIO . newHscEnv)
  where
    f env = runLightGhc env $ do
          -- HomeModuleGraph and probably all other clients get into all sorts of
@@ -58,3 +70,13 @@ runLightGhc env action = liftIO $ do
 runLightGhc' :: MonadIO m => IORef HscEnv -> LightGhc a -> m a
 runLightGhc' renv action = liftIO $ do
   flip runReaderT renv $ unLightGhc action
+
+#ifdef WITH_GHCJS
+getLibDir :: FilePath -> IO (Maybe FilePath)
+getLibDir distDir = do
+    isGhcjs <- isGhcjsConfig distDir
+    let trim = let f = reverse . dropWhile isSpace in f . f
+    if isGhcjs
+    then Just . trim <$> readProcess "ghcjs" ["--print-libdir"] ""
+    else return (Just libdir)
+#endif

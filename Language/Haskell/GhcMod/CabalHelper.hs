@@ -219,6 +219,12 @@ withCabal action = do
      readProc <- gmReadProcess
      withDirectory_ (cradleRootDir crdl) $ do
         cusPkgStack <- maybe [] ((PackageDb "clear"):) <$> getCustomPkgDbStack
+        baselineProgrs <- liftIO $
+#ifndef WITH_GHCJS
+            return (optPrograms defaultOptions)
+#else
+            checkGhcjsConfig (cradleDistDir crdl) (optPrograms defaultOptions)
+#endif
         let progOpts =
                 [ "--with-ghc=" ++ T.ghcProgram progs ]
                 -- Only pass ghc-pkg if it was actually set otherwise we

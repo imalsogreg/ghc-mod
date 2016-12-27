@@ -3,10 +3,11 @@ module Language.Haskell.GhcMod.Info (
   , types
   ) where
 
+import Control.Monad.Trans.Control (MonadBaseControl)
 import Data.Function (on)
 import Data.List (sortBy)
 import System.FilePath
-import Exception (ghandle, SomeException(..))
+import Exception (ghandle, ExceptionMonad, SomeException(..))
 import GHC (GhcMonad, SrcSpan)
 import Prelude
 import qualified GHC as G
@@ -36,9 +37,10 @@ info file expr =
       withInteractiveContext $ do
         convert' =<< body
   where
+    handler :: (IOish m, GmOut m, GmLog m, GmEnv m, ExceptionMonad m, MonadBaseControl IO m) => SomeException -> m String
     handler (SomeException ex) = do
       gmLog GmException "info" $ text "" $$ nest 4 (showToDoc ex)
-      convert' "Cannot show info"
+      convert' ("Cannot show info" :: String)
 
     body :: (GhcMonad m, GmState m, GmEnv m) => m String
     body = do

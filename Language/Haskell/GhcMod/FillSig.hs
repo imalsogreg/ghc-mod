@@ -342,7 +342,7 @@ infiniteSupply initialSupply =
 
 -- Check whether a String is a symbol name
 isSymbolName :: String -> Bool
-isSymbolName (c:_) = c `elem` "!#$%&*+./<=>?@\\^|-~" || isSymbol c
+isSymbolName (c:_) = c `elem` ("!#$%&*+./<=>?@\\^|-~" :: String) || isSymbol c
 isSymbolName []    = error "This should never happen"
 
 

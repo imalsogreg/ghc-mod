@@ -26,4 +26,4 @@ pkgDoc mdl = do
                    ++ ghcPkgDbStackOpts dbs
     toDocDirOpts pkg dbs = ["field", pkg, "haddock-html"]
                        ++ ghcPkgDbStackOpts dbs
-    trim = takeWhile (`notElem` " \n")
+    trim = takeWhile (`notElem` (" \n" :: String))

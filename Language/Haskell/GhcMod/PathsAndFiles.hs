@@ -14,6 +14,8 @@
 -- You should have received a copy of the GNU Affero General Public License
 -- along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+{-# LANGUAGE CPP #-}
+
 module Language.Haskell.GhcMod.PathsAndFiles (
     module Language.Haskell.GhcMod.PathsAndFiles
   , module Language.Haskell.GhcMod.Caching
@@ -33,6 +35,13 @@ import Distribution.Helper (buildPlatform)
 import System.Directory
 import System.FilePath
 import System.Process
+
+#ifdef WITH_GHCJS
+import qualified Distribution.Compiler              as Cabal
+import qualified Distribution.Simple.Configure      as Cabal
+import qualified Distribution.Simple.Setup          as Cabal
+import qualified Distribution.Simple.LocalBuildInfo as Cabal
+#endif
 
 import Language.Haskell.GhcMod.Types
 import Language.Haskell.GhcMod.Caching
@@ -240,3 +249,23 @@ mergedPkgOptsCacheFile dist =
 pkgDbStackCacheFile :: FilePath -> FilePath
 pkgDbStackCacheFile dist =
     setupConfigPath dist <.> "ghc-mod.package-db-stack"
+
+#ifdef WITH_GHCJS
+toGhcjs :: Programs -> Programs
+toGhcjs p = p { ghcProgram    = "ghcjs"
+              , ghcPkgProgram = "ghcjs-pkg"
+              }
+
+isGhcjsConfig :: FilePath ->  IO Bool
+isGhcjsConfig distDir = do
+  cfg <- Cabal.maybeGetPersistBuildConfig  distDir
+  return $ (Cabal.configHcFlavor . Cabal.configFlags <$> cfg) ==
+    Just (Cabal.Flag Cabal.GHCJS)
+
+checkGhcjsConfig :: FilePath -> Programs -> IO Programs
+checkGhcjsConfig distDir progs = do
+  isGhcjs <- isGhcjsConfig distDir
+  return $ if isGhcjs
+           then toGhcjs progs
+           else progs
+#endif
